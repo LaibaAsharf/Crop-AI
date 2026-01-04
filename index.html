@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Potato Disease Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            margin: 15px 0;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #219150;
+        }
+
+        img {
+            max-width: 100%;
+            margin-top: 15px;
+            border-radius: 5px;
+        }
+
+        .result {
+            margin-top: 20px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #3498db;
+            color: white;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            color: #888;
+        }
+
+        .error {
+            color: red;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🥔 Potato Disease Detection</h1>
+
+    <input type="file" id="imageInput" accept="image/*" />
+    <button onclick="uploadImage()">Upload & Predict</button>
+
+    <div id="preview"></div>
+    <div id="status"></div>
+    <div id="result" class="result"></div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8000/predict"; // Change if deployed
+
+    const imageInput = document.getElementById("imageInput");
+    const preview = document.getElementById("preview");
+    const resultDiv = document.getElementById("result");
+    const statusDiv = document.getElementById("status");
+
+    imageInput.addEventListener("change", () => {
+        preview.innerHTML = "";
+        const file = imageInput.files[0];
+        if (!file) return;
+
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        preview.appendChild(img);
+    });
+
+    async function uploadImage() {
+        resultDiv.innerHTML = "";
+        statusDiv.innerHTML = "";
+
+        const file = imageInput.files[0];
+        if (!file) {
+            alert("Please select an image first.");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        statusDiv.innerHTML = `<p class="loading">Analyzing image...</p>`;
+
+        try {
+            const response = await fetch(API_URL, {
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error("Prediction failed");
+            }
+
+            const data = await response.json();
+            statusDiv.innerHTML = "";
+
+            displayResult(data);
+
+        } catch (error) {
+            statusDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        }
+    }
+
+    function displayResult(data) {
+        const pred = data.prediction;
+        const rec = data.recommendation;
+
+        let html = `
+            <h2>Prediction</h2>
+            <p>
+                <span class="badge">${pred.disease}</span>
+                <strong> (${pred.confidence}%)</strong>
+            </p>
+
+            <h3>Description</h3>
+            <p>${rec.description}</p>
+
+            <h3>Treatment</h3>
+            <ul>
+                ${rec.treatment.map(item => `<li>${item}</li>`).join("")}
+            </ul>
+
+            <h3>Prevention</h3>
+            <ul>
+                ${rec.prevention.map(item => `<li>${item}</li>`).join("")}
+            </ul>
+
+            <h3>All Predictions</h3>
+            <ul>
+                ${Object.entries(pred.all_predictions)
+                    .map(([key, value]) => `<li>${key}: ${value}%</li>`)
+                    .join("")}
+            </ul>
+        `;
+
+        resultDiv.innerHTML = html;
+    }
+</script>
+
+</body>
+</html>
