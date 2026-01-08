@@ -7,6 +7,9 @@ from PIL import Image
 import io
 from typing import Dict
 import uvicorn
+from tensorflow.keras.applications.efficientnet_v2 import preprocess_input
+import traceback
+
 
 app = FastAPI(title="Potato Disease Detection API")
 
@@ -20,9 +23,9 @@ app.add_middleware(
 )
 
 # Model configuration
-MODEL_PATH = "potato_disease_model.tflite"  # Update with your model path
+MODEL_PATH = "potato_leaf_efficientnetv2.tflite"  # Update with your model path
 IMG_SIZE = 224  # Standard size, adjust based on your model
-CLASS_NAMES = ["Early Blight", "Healthy", "Late Blight"]
+CLASS_NAMES = ["Early Blight", "Late Blight", "Healthy"]
 
 # Disease recommendations
 RECOMMENDATIONS = {
@@ -76,40 +79,27 @@ RECOMMENDATIONS = {
 interpreter = None
 
 def load_model():
-    # Load TFLite model
     global interpreter
-    try:
-        interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-        interpreter.allocate_tensors()
-        print("Model loaded successfully")
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        raise
+    interpreter = tf.lite.Interpreter(model_path=MODEL_PATH, num_threads=2)
+    interpreter.allocate_tensors()
+    print("✅ TFLite model loaded")
 
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
-    # Preprocess image for model inference
-    # Resize to model input size
-    # Normalize pixel values
     try:
-        # Open image
-        img = Image.open(io.BytesIO(image_bytes))
-        
-        # Convert to RGB if needed
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        
-        # Resize
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img = img.resize((IMG_SIZE, IMG_SIZE))
-        
-        # Convert to numpy array
+
         img_array = np.array(img, dtype=np.float32)
-        
-        # Normalize to [0, 1]
-        img_array = img_array / 255.0
-        
+
+        # EfficientNetV2 preprocessing (DO NOT divide by 255)
+        img_array = preprocess_input(img_array)
+
         # Add batch dimension
         img_array = np.expand_dims(img_array, axis=0)
-        
+
+        # FP16 MODEL → convert input to float16
+        img_array = img_array.astype(np.float16)
+
         return img_array
     except Exception as e:
         raise ValueError(f"Error preprocessing image: {e}")
@@ -123,7 +113,12 @@ def predict(image_array: np.ndarray) -> Dict:
         output_details = interpreter.get_output_details()
         
         # Set input tensor
+        if image_array.dtype != input_details[0]["dtype"]:
+
+            image_array = image_array.astype(input_details[0]["dtype"])
+
         interpreter.set_tensor(input_details[0]['index'], image_array)
+
         
         # Run inference
         interpreter.invoke()
@@ -146,7 +141,9 @@ def predict(image_array: np.ndarray) -> Dict:
             }
         }
     except Exception as e:
-        raise RuntimeError(f"Error during prediction: {e}")
+        print("❌ FULL ERROR TRACE:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.on_event("startup")
 async def startup_event():
